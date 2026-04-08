@@ -2,17 +2,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 
 const NAV = [
   {
-    path: '/tags',
-    label: '标签墙',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M7 7h.01M3 5a2 2 0 012-2h3.28a2 2 0 011.42.59l7.71 7.71a2 2 0 010 2.83l-3.28 3.28a2 2 0 01-2.83 0L3.59 9.7A2 2 0 013 8.28V5z"/>
-      </svg>
-    )
-  },
-  {
-    path: '/experiments',
-    label: '实验场',
+    path: '/lab',
+    label: '实验室',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
         <path d="M9 3v11.5a3.5 3.5 0 007 0V3M6 3h12"/>
@@ -39,11 +30,12 @@ const NAV = [
     )
   },
   {
-    path: '/river',
-    label: '我的河',
+    path: '/mine',
+    label: '我的',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M3 12c3-4 6-4 9 0s6 4 9 0M3 18c3-4 6-4 9 0s6 4 9 0"/>
+        <circle cx="12" cy="8" r="4"/>
+        <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
       </svg>
     )
   }

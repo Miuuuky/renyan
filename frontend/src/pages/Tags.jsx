@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { tagsApi } from '../api/index.js';
+import { useNavigate } from 'react-router-dom';
 
 export default function Tags() {
   const [tags, setTags] = useState([]);
@@ -34,14 +35,22 @@ export default function Tags() {
     setTags(prev => prev.map(t => t.id === id ? data : t));
   }
 
-  const active = tags.filter(t => !t.is_archived);
+  async function restore(id) {
+    const { data } = await tagsApi.restore(id);
+    setTags(prev => prev.map(t => t.id === id ? data : t));
+  }
+
+  const navigate = useNavigate();
+  const active = tags
+    .filter(t => !t.is_archived)
+    .sort((a, b) => (b.is_pinned ? 1 : 0) - (a.is_pinned ? 1 : 0));
   const archived = tags.filter(t => t.is_archived);
 
   return (
     <div className="page">
       <h2 style={{ fontSize: 20, fontWeight: 500, marginBottom: 8 }}>我的标签</h2>
       <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 32 }}>
-        这些词来自你的回答，不定义你，只是此刻的一个切面。
+        这些词来自你的回答，不定义你，只是此刻的一个切面。点击词语可以看看别人怎么理解它。
       </p>
 
       {active.length === 0 && (
@@ -71,7 +80,12 @@ export default function Tags() {
                 {tag.is_pinned && (
                   <span style={{ fontSize: 10, color: 'var(--accent)' }}>📌</span>
                 )}
-                <span>{tag.text}</span>
+                <button
+                  style={{ fontSize: 13, color: 'inherit', padding: 0 }}
+                  onClick={() => navigate('/words', { state: { word: { id: 'tag_' + tag.id, text: tag.text } } })}
+                >
+                  {tag.text}
+                </button>
                 <span style={{ display: 'flex', gap: 4, marginLeft: 4 }}>
                   <button
                     style={{ fontSize: 11, color: 'var(--text-muted)', padding: '0 2px' }}
@@ -104,9 +118,15 @@ export default function Tags() {
           <p style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 16 }}>过去的我</p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {archived.map(tag => (
-              <span key={tag.id} className="tag" style={{ opacity: 0.45, fontSize: 12 }}>
-                {tag.text}
-              </span>
+              <div key={tag.id} className="tag" style={{ opacity: 0.55, fontSize: 12 }}>
+                <span>{tag.text}</span>
+                <button
+                  style={{ fontSize: 11, color: 'var(--text-muted)', padding: '0 2px', marginLeft: 4 }}
+                  onClick={() => restore(tag.id)}
+                >
+                  ·恢复
+                </button>
+              </div>
             ))}
           </div>
         </div>

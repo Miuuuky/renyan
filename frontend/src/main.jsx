@@ -7,9 +7,10 @@ import BottomNav from './components/BottomNav';
 import Onboarding from './pages/Onboarding';
 import Tags from './pages/Tags';
 import Experiments from './pages/Experiments';
+import Lab from './pages/Lab';
 import Resonance from './pages/Resonance';
 import Words from './pages/Words';
-import River from './pages/River';
+import Mine from './pages/Mine';
 
 function App() {
   const init = useStore(s => s.init);
@@ -39,10 +40,11 @@ function App() {
         <Route path="/onboarding" element={<Onboarding />} />
         <Route path="/tags" element={<><Tags /><BottomNav /></>} />
         <Route path="/experiments" element={<><Experiments /><BottomNav /></>} />
+        <Route path="/lab" element={<><Lab /><BottomNav /></>} />
         <Route path="/resonance" element={<><Resonance /><BottomNav /></>} />
         <Route path="/words" element={<><Words /><BottomNav /></>} />
-        <Route path="/river" element={<><River /><BottomNav /></>} />
-        <Route path="*" element={<Navigate to={hasOnboarded ? '/tags' : '/onboarding'} replace />} />
+        <Route path="/mine" element={<><Mine /><BottomNav /></>} />
+        <Route path="*" element={<Navigate to={hasOnboarded ? '/experiments' : '/onboarding'} replace />} />
       </Routes>
     </BrowserRouter>
   );

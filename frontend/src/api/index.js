@@ -1,6 +1,6 @@
 import { storage, uid, randomName } from './storage';
+import { PRESET_WORDS, PRESET_INTERPRETATIONS, TAG_SIMILAR_MAP } from './words-data';
 
-// 初始化用户
 function getOrCreateUser() {
   let user = storage.get('user');
   if (!user) {
@@ -10,32 +10,41 @@ function getOrCreateUser() {
   return user;
 }
 
-// 模拟标签提取（根据关键词匹配）
 function mockExtractTags(answers) {
   const text = answers.join(' ');
   const rules = [
-    { keywords: ['打断','急','快','来不及'], tag: '容易急' },
-    { keywords: ['不敢','没说','忍住','算了'], tag: '不敢说' },
-    { keywords: ['效率','时间','浪费','拖'], tag: '对效率有要求' },
-    { keywords: ['误解','不理解','不懂我'], tag: '渴望被理解' },
-    { keywords: ['情绪','激动','发火','生气'], tag: '情绪敏感' },
-    { keywords: ['倾听','听','陪'], tag: '善于倾听' },
-    { keywords: ['表达','说清楚','说不出'], tag: '不善表达' },
-    { keywords: ['沉默','不说话','安静'], tag: '习惯沉默' },
-    { keywords: ['委屈','受伤','难过'], tag: '容易受伤' },
-    { keywords: ['调解','中间','平衡'], tag: '喜欢调解' },
-    { keywords: ['怕','担心','焦虑'], tag: '容易焦虑' },
-    { keywords: ['直接','直说','坦白'], tag: '表达直接' },
+    { keywords: ['安静','不说话','内敛'], tag: '安静' },
+    { keywords: ['话多','停不下来','爱说'], tag: '话多' },
+    { keywords: ['直接','直说','不拐弯'], tag: '直接' },
+    { keywords: ['委婉','含蓄','绕弯'], tag: '委婉' },
+    { keywords: ['犹豫','迟疑','拿不定'], tag: '犹豫' },
+    { keywords: ['果断','决断','快'], tag: '果断' },
+    { keywords: ['慢热','需要时间','不容易亲近'], tag: '慢热' },
+    { keywords: ['主动','联系','发起'], tag: '主动' },
+    { keywords: ['被动','等待','不主动'], tag: '被动' },
+    { keywords: ['理性','逻辑','分析'], tag: '理性' },
+    { keywords: ['感性','情绪','感受'], tag: '感性' },
+    { keywords: ['倾听','听','陪'], tag: '倾听' },
+    { keywords: ['表达','说清楚','说不出'], tag: '表达' },
+    { keywords: ['独立','自主','不依赖'], tag: '独立' },
+    { keywords: ['坚持','不放弃','坚定'], tag: '坚持' },
+    { keywords: ['急','急躁','冲动'], tag: '急躁' },
+    { keywords: ['耐心','不着急','慢慢'], tag: '耐心' },
+    { keywords: ['包容','接受','不计较'], tag: '包容' },
+    { keywords: ['信任','相信','信赖'], tag: '信任' },
+    { keywords: ['温和','温柔','平和'], tag: '温和' },
+    { keywords: ['躲','逃','回避','不想面对'], tag: '回避' },
+    { keywords: ['误解','不理解','没人懂'], tag: '渴望被理解' },
+    { keywords: ['拒绝','说不','不敢拒绝'], tag: '不善拒绝' },
+    { keywords: ['比喻','乌龟','气球','消防'], tag: '善用比喻' },
+    { keywords: ['冷战','沉默','不说话'], tag: '习惯沉默' },
   ];
   const matched = rules.filter(r => r.keywords.some(k => text.includes(k))).map(r => r.tag);
-  // 保证至少5个，不足时补充通用标签
-  const fallback = ['在意他人感受','重视沟通','有自己的节奏','不轻易示弱','需要被看见'];
-  const result = [...new Set([...matched, ...fallback])].slice(0, Math.floor(Math.random() * 4) + 5);
-  return result;
+  const fallback = ['感受', '表达', '倾听', '独立', '温和'];
+  return [...new Set([...matched, ...fallback])].slice(0, Math.floor(Math.random() * 4) + 5);
 }
 
-// 模拟换个视角
-function mockPerspective(content) {
+function mockPerspective() {
   const perspectives = [
     '也许对方当时也在等一个开口的机会，只是方式不太一样。',
     '也许他说那句话时，心里也有些不确定，不知道怎么表达才合适。',
@@ -47,49 +56,18 @@ function mockPerspective(content) {
   return perspectives[Math.floor(Math.random() * perspectives.length)];
 }
 
-// 预置实验卡片
-const PRESET_EXPERIMENTS = [
-  '下次想打断别人时，在心里默数三个数。只做这一次。',
-  '今天找一个人，只听他说完，不给任何建议。',
-  '把一件你一直没说出口的事，写在纸上，不用发给任何人。',
-  '下次感到不舒服时，先在心里说一句"我现在感到___"，再决定要不要开口。',
-  '今天对一个人说一句具体的感谢，不用"谢谢"，而是说谢谢他做了什么。',
-  '下次想反驳时，先重复一遍对方说的话，确认你理解对了。',
-  '今天允许自己沉默一次，不用填满每一个空白。',
-  '下次想说"你应该"时，换成"我希望"试试。',
-  '今天试着在说"没事"之前，停一秒，想想是不是真的没事。',
-  '写下你觉得自己"最难被理解"的一面，不用给任何人看。',
-];
+function findSimilarWordId(tagText) {
+  const matched = TAG_SIMILAR_MAP.find(r =>
+    r.keywords.some(k => tagText.includes(k) || k.includes(tagText))
+  );
+  return matched?.wordId || null;
+}
 
-// 预置共振厅帖子
 const PRESET_POSTS = [
   { id: uid(), content: '我说了很多，但感觉对方根本没在听。不是愤怒，只是一种很深的疲惫。', anon_name: '晨雾412', resonance_count: 7, created_at: new Date(Date.now() - 86400000 * 2).toISOString() },
   { id: uid(), content: '有些话我想了很久，最后还是没说出口。不知道说了会怎样，但没说也很难受。', anon_name: '流云208', resonance_count: 12, created_at: new Date(Date.now() - 86400000).toISOString() },
   { id: uid(), content: '对方沉默的时候，我不知道该怎么办。我填满了所有的空白，但好像越说越远。', anon_name: '暮光531', resonance_count: 5, created_at: new Date(Date.now() - 3600000 * 5).toISOString() },
 ];
-
-// 预置词语
-const PRESET_WORDS = [
-  { id: 'w1', text: '强势', interpretation_count: 3 },
-  { id: 'w2', text: '敏感', interpretation_count: 5 },
-  { id: 'w3', text: '冷漠', interpretation_count: 2 },
-  { id: 'w4', text: '话多', interpretation_count: 4 },
-  { id: 'w5', text: '沉默', interpretation_count: 6 },
-  { id: 'w6', text: '急躁', interpretation_count: 3 },
-  { id: 'w7', text: '温柔', interpretation_count: 7 },
-  { id: 'w8', text: '固执', interpretation_count: 2 },
-  { id: 'w9', text: '体贴', interpretation_count: 4 },
-  { id: 'w10', text: '疏离', interpretation_count: 3 },
-];
-
-const PRESET_INTERPRETATIONS = {
-  w1: [{ id: uid(), anon_name: '细雨317', content: '对我来说，强势不是坏事。是一个人知道自己要什么，并且敢于说出来。', created_at: new Date(Date.now() - 86400000).toISOString() }],
-  w2: [{ id: uid(), anon_name: '山风629', content: '敏感让我能感受到别人感受不到的东西，但也让我更容易受伤。', created_at: new Date(Date.now() - 86400000 * 2).toISOString() }],
-  w5: [{ id: uid(), anon_name: '落叶104', content: '我的沉默不是拒绝，是我在认真想你说的话。', created_at: new Date(Date.now() - 3600000 * 3).toISOString() }],
-  w7: [{ id: uid(), anon_name: '星尘256', content: '温柔有时候是一种很累的事，因为你要一直照顾别人的感受。', created_at: new Date(Date.now() - 86400000 * 3).toISOString() }],
-};
-
-// ---- 对外暴露的 API ----
 
 export const userApi = {
   register: () => Promise.resolve({ data: { token: 'local', user: getOrCreateUser() } }),
@@ -103,16 +81,16 @@ export const userApi = {
 export const onboardingApi = {
   getQuestions: () => {
     const all = [
-      '最近一次让你感到不舒服的沟通，发生了什么？（请只描述事实和你的感受）',
-      '你觉得自己在说话时，最常被别人说的一句话是什么？',
-      '什么样的话会让你立刻不想聊下去？',
-      '你心里有一个想说但一直没说出口的需求吗？可以写下来。',
-      '如果用一个词形容你现在的沟通状态，会是什么？',
-      '你希望别人理解你哪一点？',
-      '你曾经因为一句话而觉得被看见过吗？那是一句怎样的话？',
-      '当别人情绪激动时，你通常第一反应是什么？',
-      '你有没有因为怕伤感情而忍住没说的话？那是什么场景？',
-      '你觉得自己在哪种沟通角色里最自在：倾听者、表达者、还是调解者？',
+      '最近一次让你觉得"沟通好累"的事情，发生了什么？',
+      '什么样的人说话，会让你本能地想躲开？',
+      '如果用一个比喻形容你在冲突中的样子，你会是什么？',
+      '你觉得自己在沟通中经常被误解的一点是什么？',
+      '当你需要拒绝别人时，你通常会怎么做？',
+      '你有没有一句话，是你很想对某人说但一直没说出口的？',
+      '你觉得自己最难被别人理解的一面是什么？',
+      '你上一次感到"被看见"是什么时候？那是什么感觉？',
+      '当别人情绪很激动时，你的第一反应通常是什么？',
+      '你有没有因为怕破坏关系而忍住没说的话？那是什么场景？',
     ];
     const count = Math.floor(Math.random() * 3) + 5;
     const shuffled = [...all].sort(() => Math.random() - 0.5).slice(0, count);
@@ -127,7 +105,6 @@ export const onboardingApi = {
     }));
     storage.set('tags', tags);
     storage.set('onboarded', true);
-    // 存入我的河
     tags.forEach(t => storage.push('river', { ...t, type: 'tag' }));
     return Promise.resolve({ data: { tags } });
   }
@@ -155,15 +132,17 @@ export const tagsApi = {
     );
     storage.set('tags', tags);
     return Promise.resolve({ data: tags.find(t => t.id === id) });
+  },
+  restore: (id) => {
+    const tags = (storage.get('tags') || []).map(t =>
+      t.id === id ? { ...t, is_archived: false } : t
+    );
+    storage.set('tags', tags);
+    return Promise.resolve({ data: tags.find(t => t.id === id) });
   }
 };
 
 export const experimentsApi = {
-  recommend: () => {
-    const shuffled = [...PRESET_EXPERIMENTS].sort(() => Math.random() - 0.5);
-    const cards = shuffled.slice(0, 3).map((content, i) => ({ id: 'exp-' + i, content }));
-    return Promise.resolve({ data: cards });
-  },
   done: ({ experimentId, content, note }) => {
     const record = {
       id: uid(), experiment_id: experimentId,
@@ -182,26 +161,19 @@ export const resonanceApi = {
   },
   post: (content) => {
     const user = getOrCreateUser();
-    const post = {
-      id: uid(), content, anon_name: user.anon_name,
-      resonance_count: 0, created_at: new Date().toISOString()
-    };
+    const post = { id: uid(), content, anon_name: user.anon_name, resonance_count: 0, created_at: new Date().toISOString() };
     storage.push('posts', post);
     return Promise.resolve({ data: post });
   },
   resonate: (id, feeling) => {
     const posts = storage.get('posts') || [];
-    const updated = posts.map(p =>
-      p.id === id ? { ...p, resonance_count: (p.resonance_count || 0) + 1 } : p
-    );
+    const updated = posts.map(p => p.id === id ? { ...p, resonance_count: (p.resonance_count || 0) + 1 } : p);
     storage.set('posts', updated);
-    return Promise.resolve({ data: { resonance_count: (updated.find(p => p.id === id)?.resonance_count || 1) } });
+    return Promise.resolve({ data: { resonance_count: updated.find(p => p.id === id)?.resonance_count || 1 } });
   },
   getPerspective: (id) => {
     const saved = storage.get('perspectives_' + id);
-    if (saved?.length) {
-      return Promise.resolve({ data: { content: saved[Math.floor(Math.random() * saved.length)].content, is_ai: false } });
-    }
+    if (saved?.length) return Promise.resolve({ data: { content: saved[Math.floor(Math.random() * saved.length)].content, is_ai: false } });
     return Promise.resolve({ data: { content: mockPerspective(), is_ai: true } });
   },
   addPerspective: (id, content) => {
@@ -215,16 +187,135 @@ export const wordsApi = {
   getInterpretations: (id) => {
     const saved = storage.get('interp_' + id) || [];
     const preset = PRESET_INTERPRETATIONS[id] || [];
+    if (id.startsWith('tag_') && preset.length === 0) {
+      const tags = storage.get('tags') || [];
+      const tag = tags.find(t => t.id === id.replace('tag_', ''));
+      if (tag) {
+        const similarId = findSimilarWordId(tag.text);
+        const borrowed = (similarId ? (PRESET_INTERPRETATIONS[similarId] || []) : [])
+          .slice(0, 3).map(item => ({ ...item, id: uid() }));
+        return Promise.resolve({ data: [...saved, ...borrowed] });
+      }
+    }
     return Promise.resolve({ data: [...saved, ...preset] });
   },
   addInterpretation: (id, content) => {
     const user = getOrCreateUser();
-    const item = { id: uid(), anon_name: user.anon_name, content, created_at: new Date().toISOString() };
+    const item = { id: uid(), anon_name: user.anon_name, content, created_at: new Date().toISOString(), like_count: 0 };
     storage.push('interp_' + id, item);
     return Promise.resolve({ data: item });
-  }
+  },
+  likeInterpretation: (wordId, interpId) => {
+    const liked = storage.get('liked_interp') || {};
+    if (liked[interpId]) return Promise.resolve({ data: { liked: false, cancelled: true } });
+    liked[interpId] = true;
+    storage.set('liked_interp', liked);
+    return Promise.resolve({ data: { liked: true } });
+  },
+  isLiked: (interpId) => {
+    const liked = storage.get('liked_interp') || {};
+    return !!liked[interpId];
+  },
+  addComment: (wordId, interpId, content) => {
+    const user = getOrCreateUser();
+    const comment = { id: uid(), anon_name: user.anon_name, content, created_at: new Date().toISOString() };
+    storage.push('comments_' + interpId, comment);
+    return Promise.resolve({ data: comment });
+  },
+  getComments: (interpId) => Promise.resolve({ data: storage.get('comments_' + interpId) || [] })
 };
 
 export const riverApi = {
   list: () => Promise.resolve({ data: storage.get('river') || [] })
+};
+
+export const labApi = {
+  // 获取场景库（预设 + 用户贡献）
+  getScenes: () => {
+    const userScenes = storage.get('user_scenes') || [];
+    return Promise.resolve({ data: userScenes });
+  },
+  // 用户贡献场景
+  contributeScene: ({ category, background, prompt }) => {
+    const user = getOrCreateUser();
+    const scene = {
+      id: 'u_' + uid(), category, background, prompt,
+      anon_name: user.anon_name, created_at: new Date().toISOString()
+    };
+    storage.push('user_scenes', scene);
+    return Promise.resolve({ data: scene });
+  },
+  // 提交表达（仅自己 or 发布广场）
+  submitResponse: ({ sceneId, sceneBackground, response, isPublic }) => {
+    const user = getOrCreateUser();
+    const record = {
+      id: uid(), sceneId, sceneBackground, response,
+      anon_name: user.anon_name, isPublic,
+      like_count: 0, created_at: new Date().toISOString()
+    };
+    // 存训练记录
+    storage.push('lab_records', record);
+    // 发布广场
+    if (isPublic) storage.push('lab_plaza', record);
+    return Promise.resolve({ data: record });
+  },
+  // 广场列表
+  getPlaza: (sort = 'time') => {
+    const plaza = storage.get('lab_plaza') || [];
+    const sorted = [...plaza].sort((a, b) => {
+      if (sort === 'likes') return (b.like_count || 0) - (a.like_count || 0);
+      if (sort === 'comments') {
+        const ac = (storage.get('lab_comments_' + a.id) || []).length;
+        const bc = (storage.get('lab_comments_' + b.id) || []).length;
+        return bc - ac;
+      }
+      return new Date(b.created_at) - new Date(a.created_at);
+    });
+    return Promise.resolve({ data: sorted });
+  },
+  // 广场点赞
+  likeResponse: (id) => {
+    const liked = storage.get('liked_lab') || {};
+    if (liked[id]) {
+      liked[id] = false;
+      storage.set('liked_lab', liked);
+      const plaza = (storage.get('lab_plaza') || []).map(p =>
+        p.id === id ? { ...p, like_count: Math.max(0, (p.like_count || 0) - 1) } : p
+      );
+      storage.set('lab_plaza', plaza);
+      return Promise.resolve({ data: { liked: false } });
+    }
+    liked[id] = true;
+    storage.set('liked_lab', liked);
+    const plaza = (storage.get('lab_plaza') || []).map(p =>
+      p.id === id ? { ...p, like_count: (p.like_count || 0) + 1 } : p
+    );
+    storage.set('lab_plaza', plaza);
+    return Promise.resolve({ data: { liked: true } });
+  },
+  isLiked: (id) => !!(storage.get('liked_lab') || {})[id],
+  // 广场评论
+  getComments: (id) => Promise.resolve({ data: storage.get('lab_comments_' + id) || [] }),
+  addComment: (id, content) => {
+    const user = getOrCreateUser();
+    const comment = { id: uid(), anon_name: user.anon_name, content, created_at: new Date().toISOString() };
+    storage.push('lab_comments_' + id, comment);
+    return Promise.resolve({ data: comment });
+  },
+  // 训练记录
+  getRecords: () => Promise.resolve({ data: storage.get('lab_records') || [] }),
+  deleteRecord: (id) => {
+    const records = (storage.get('lab_records') || []).filter(r => r.id !== id);
+    storage.set('lab_records', records);
+    return Promise.resolve({ data: { ok: true } });
+  }
+};
+
+export const wordRequestApi = {
+  submit: (word) => {
+    const user = getOrCreateUser();
+    const item = { id: uid(), word: word.trim(), anon_name: user.anon_name, created_at: new Date().toISOString() };
+    storage.push('word_requests', item);
+    return Promise.resolve({ data: item });
+  }
 };
