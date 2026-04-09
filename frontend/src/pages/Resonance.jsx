@@ -1,153 +1,160 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { resonanceApi } from '../api/index.js';
 
-function RippleButton({ postId, count, onResonate }) {
-  const [ripples, setRipples] = useState([]);
-  const [showFeeling, setShowFeeling] = useState(false);
+// ---- 详情页 ----
+function PostDetail({ post, onBack }) {
+  const [perspective, setPerspective] = useState(null);
+  const [loadingP, setLoadingP] = useState(false);
+  const [contributing, setContributing] = useState(false);
+  const [pInput, setPInput] = useState('');
+  const [resonated, setResonated] = useState(false);
+  const [myFeeling, setMyFeeling] = useState('');
   const [feeling, setFeeling] = useState('');
+  const [showFeelingInput, setShowFeelingInput] = useState(false);
+  const [count, setCount] = useState(post.resonance_count || 0);
 
-  function triggerRipple(e) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const id = Date.now();
-    setRipples(prev => [...prev, { id, x, y }]);
-    setTimeout(() => setRipples(prev => prev.filter(r => r.id !== id)), 700);
-    setShowFeeling(true);
+  async function handleResonate() {
+    if (resonated) return;
+    setShowFeelingInput(true);
   }
 
-  async function submit() {
-    await onResonate(feeling.trim() || null);
-    setShowFeeling(false);
+  async function submitResonate() {
+    const { data } = await resonanceApi.resonate(post.id, feeling.trim() || null);
+    setCount(data.resonance_count);
+    setMyFeeling(feeling.trim());
+    setResonated(true);
+    setShowFeelingInput(false);
     setFeeling('');
   }
 
-  return (
-    <div>
-      <button
-        onClick={triggerRipple}
-        style={{
-          position: 'relative',
-          overflow: 'hidden',
-          color: 'var(--text-muted)',
-          fontSize: 13,
-          padding: '6px 0',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6
-        }}
-      >
-        {ripples.map(r => (
-          <span
-            key={r.id}
-            className="ripple-effect"
-            style={{ width: 20, height: 20, left: r.x - 10, top: r.y - 10 }}
-          />
-        ))}
-        <span>我也有过</span>
-        {count > 0 && (
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>· {count}</span>
-        )}
-      </button>
-
-      {showFeeling && (
-        <div style={{ marginTop: 10 }}>
-          <input
-            placeholder="留下你的类似感受（可跳过）"
-            value={feeling}
-            onChange={e => setFeeling(e.target.value)}
-            style={{ marginBottom: 8 }}
-          />
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn-ghost" onClick={submit}>留下</button>
-            <button className="btn-ghost" onClick={() => setShowFeeling(false)}>跳过</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PerspectiveButton({ postId }) {
-  const [perspective, setPerspective] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [contributing, setContributing] = useState(false);
-  const [input, setInput] = useState('');
-
-  async function load() {
-    setLoading(true);
-    try {
-      const { data } = await resonanceApi.getPerspective(postId);
-      setPerspective(data.content);
-    } finally {
-      setLoading(false);
-    }
+  async function loadPerspective() {
+    setLoadingP(true);
+    const { data } = await resonanceApi.getPerspective(post.id);
+    setPerspective(data.content);
+    setLoadingP(false);
   }
 
-  async function contribute() {
-    if (!input.trim()) return;
-    await resonanceApi.addPerspective(postId, input.trim());
+  async function submitPerspective() {
+    if (!pInput.trim()) return;
+    await resonanceApi.addPerspective(post.id, pInput.trim());
     setContributing(false);
-    setInput('');
+    setPInput('');
   }
 
   return (
-    <div>
+    <div className="page">
       <button
-        className="btn-ghost"
-        style={{ fontSize: 13 }}
-        onClick={load}
-        disabled={loading}
+        style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 24 }}
+        onClick={onBack}
       >
-        {loading ? '…' : '换个视角'}
+        ← 返回
       </button>
 
-      {perspective && (
-        <div style={{
-          marginTop: 12,
-          padding: '12px 14px',
-          background: 'var(--tag-bg)',
-          borderRadius: 'var(--radius-sm)',
-          fontSize: 13,
-          color: 'var(--text-secondary)',
-          lineHeight: 1.7
-        }}>
-          {perspective}
-          <div style={{ marginTop: 10 }}>
-            {contributing ? (
-              <div>
-                <input
-                  placeholder="你的视角…"
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  style={{ marginBottom: 8 }}
-                />
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn-ghost" onClick={contribute}>提交</button>
-                  <button className="btn-ghost" onClick={() => setContributing(false)}>取消</button>
-                </div>
-              </div>
-            ) : (
+      {/* 帖子内容 */}
+      <div className="card" style={{ marginBottom: 24 }}>
+        <p style={{ fontSize: 15, lineHeight: 1.9, color: 'var(--text-primary)', marginBottom: 16 }}>
+          {post.content}
+        </p>
+        <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+          {post.anon_name} · {new Date(post.created_at).toLocaleDateString('zh-CN')}
+        </p>
+      </div>
+
+      {/* 我也有过 */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>🌊 我也有过</p>
+        {resonated ? (
+          <div>
+            <p style={{ fontSize: 13, color: 'var(--accent)', marginBottom: myFeeling ? 10 : 0 }}>
+              已留下共鸣 · {count} 人有过类似感受
+            </p>
+            {myFeeling && (
+              <p style={{
+                fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7,
+                paddingLeft: 10, borderLeft: '2px solid var(--accent)'
+              }}>
+                {myFeeling}
+              </p>
+            )}
+          </div>
+        ) : showFeelingInput ? (
+          <div>
+            <input
+              placeholder="留下你的类似感受（可跳过）"
+              value={feeling}
+              onChange={e => setFeeling(e.target.value)}
+              style={{ marginBottom: 10 }}
+            />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn-ghost" onClick={submitResonate}>留下</button>
+              <button className="btn-ghost" onClick={() => { setShowFeelingInput(false); submitResonate(); }}>跳过</button>
+            </div>
+          </div>
+        ) : (
+          <div>
+            {count > 0 && (
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+                已有 {count} 人有过类似感受
+              </p>
+            )}
+            <button className="btn-ghost" onClick={handleResonate}>我也有过</button>
+          </div>
+        )}
+      </div>
+
+      {/* 换个视角 */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>🔍 换个视角</p>
+        {perspective ? (
+          <div>
+            <p style={{ fontSize: 14, lineHeight: 1.8, color: 'var(--text-secondary)', marginBottom: 14 }}>
+              {perspective}
+            </p>
+            {!contributing ? (
               <button
-                style={{ fontSize: 11, color: 'var(--text-muted)' }}
+                style={{ fontSize: 12, color: 'var(--text-muted)' }}
                 onClick={() => setContributing(true)}
               >
                 + 留下我的视角
               </button>
+            ) : (
+              <div>
+                <input
+                  placeholder="你的视角…"
+                  value={pInput}
+                  onChange={e => setPInput(e.target.value)}
+                  style={{ marginBottom: 8 }}
+                  autoFocus
+                />
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn-ghost" onClick={submitPerspective}>提交</button>
+                  <button className="btn-ghost" onClick={() => setContributing(false)}>取消</button>
+                </div>
+              </div>
             )}
           </div>
-        </div>
-      )}
+        ) : (
+          <button
+            className="btn-ghost"
+            disabled={loadingP}
+            onClick={loadPerspective}
+          >
+            {loadingP ? '…' : '看看另一种可能'}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
+// ---- 列表页 ----
 export default function Resonance() {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [composing, setComposing] = useState(false);
   const [draft, setDraft] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [selected, setSelected] = useState(null);
 
   useEffect(() => { load(); }, []);
 
@@ -170,30 +177,27 @@ export default function Resonance() {
     }
   }
 
-  async function handleResonate(postId, feeling) {
-    const { data } = await resonanceApi.resonate(postId, feeling);
-    setPosts(prev => prev.map(p =>
-      p.id === postId ? { ...p, resonance_count: data.resonance_count } : p
-    ));
+  if (selected) {
+    return <PostDetail post={selected} onBack={() => setSelected(null)} />;
   }
 
   return (
     <div className="page">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
-        <div>
-          <h2 style={{ fontSize: 20, fontWeight: 500 }}>共振厅</h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>
-            只说自己的感受，不评价对方。
-          </p>
-        </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 500 }}>共振厅</h2>
         <button className="btn-ghost" onClick={() => setComposing(true)}>写一段</button>
       </div>
+      <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 24 }}>
+        只说自己的感受，不评价对方。
+      </p>
 
       {composing && (
-        <div className="card" style={{ marginBottom: 24 }}>
+        <div className="card" style={{ marginBottom: 20 }}>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+            描述你的感受，不提对方的对错…
+          </p>
           <textarea
             rows={4}
-            placeholder="描述你的感受，不提对方的对错…"
             value={draft}
             onChange={e => setDraft(e.target.value)}
             style={{ marginBottom: 12 }}
@@ -210,22 +214,38 @@ export default function Resonance() {
 
       {loading && <div className="loading">加载中…</div>}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {posts.map(post => (
-          <div key={post.id} className="card">
-            <p style={{ fontSize: 15, lineHeight: 1.8, marginBottom: 16 }}>{post.content}</p>
-            <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>
-              {post.anon_name} · {new Date(post.created_at).toLocaleDateString('zh-CN')}
+          <button
+            key={post.id}
+            onClick={() => setSelected(post)}
+            style={{
+              textAlign: 'left', background: 'var(--surface)',
+              border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+              padding: '16px 18px', transition: 'border-color 0.2s'
+            }}
+            onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent)'}
+            onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
+          >
+            <p style={{
+              fontSize: 14, lineHeight: 1.8, color: 'var(--text-primary)',
+              marginBottom: 10,
+              display: '-webkit-box', WebkitLineClamp: 3,
+              WebkitBoxOrient: 'vertical', overflow: 'hidden'
+            }}>
+              {post.content}
             </p>
-            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-              <RippleButton
-                postId={post.id}
-                count={post.resonance_count}
-                onResonate={(feeling) => handleResonate(post.id, feeling)}
-              />
-              <PerspectiveButton postId={post.id} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                {post.anon_name} · {new Date(post.created_at).toLocaleDateString('zh-CN')}
+              </p>
+              {post.resonance_count > 0 && (
+                <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  🌊 {post.resonance_count}
+                </p>
+              )}
             </div>
-          </div>
+          </button>
         ))}
       </div>
 

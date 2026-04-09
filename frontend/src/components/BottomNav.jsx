@@ -22,7 +22,7 @@ const NAV = [
   },
   {
     path: '/words',
-    label: '词语集市',
+    label: '标签市集',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
         <path d="M4 6h16M4 12h10M4 18h6"/>

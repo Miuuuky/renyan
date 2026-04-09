@@ -12,121 +12,130 @@ function FloatingWord({ word, onClick }) {
         animation: `float ${duration}s ease-in-out ${delay}s infinite`,
         color: 'var(--text-secondary)',
         fontSize: 14 + Math.random() * 6,
-        padding: '6px 12px',
-        borderRadius: 20,
-        background: 'var(--tag-bg)',
-        transition: 'background 0.2s, color 0.2s',
-        margin: 4
+        padding: '6px 12px', borderRadius: 20,
+        background: 'var(--tag-bg)', transition: 'background 0.2s, color 0.2s', margin: 4
       }}
-      onMouseEnter={e => {
-        e.currentTarget.style.background = 'var(--tag-pinned)';
-        e.currentTarget.style.color = 'var(--accent)';
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.background = 'var(--tag-bg)';
-        e.currentTarget.style.color = 'var(--text-secondary)';
-      }}
+      onMouseEnter={e => { e.currentTarget.style.background = 'var(--tag-pinned)'; e.currentTarget.style.color = 'var(--accent)'; }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'var(--tag-bg)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
     >
       {word.text}
     </button>
   );
 }
 
-function InterpretationCard({ item, wordId }) {
+// 解读详情页
+function InterpretationDetail({ item, wordId, wordText, onBack }) {
   const [liked, setLiked] = useState(() => wordsApi.isLiked(item.id));
   const [likeCount, setLikeCount] = useState(item.like_count || 0);
-  const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState([]);
   const [draft, setDraft] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  useEffect(() => {
+    wordsApi.getComments(item.id).then(({ data }) => setComments(data));
+  }, []);
+
   async function toggleLike() {
     const { data } = await wordsApi.likeInterpretation(wordId, item.id);
-    if (data.cancelled) {
-      setLiked(false);
-      setLikeCount(c => Math.max(0, c - 1));
-    } else {
-      setLiked(true);
-      setLikeCount(c => c + 1);
-    }
-  }
-
-  async function loadComments() {
-    const { data } = await wordsApi.getComments(item.id);
-    setComments(data);
-    setShowComments(true);
+    if (data.cancelled) { setLiked(false); setLikeCount(c => Math.max(0, c - 1)); }
+    else { setLiked(true); setLikeCount(c => c + 1); }
   }
 
   async function submitComment() {
     if (!draft.trim()) return;
     setSubmitting(true);
     const { data } = await wordsApi.addComment(wordId, item.id, draft.trim());
-    setComments(prev => [data, ...prev]);
+    setComments(prev => [...prev, data]);
     setDraft('');
     setSubmitting(false);
   }
 
   return (
-    <div className="card" style={{ marginBottom: 12 }}>
-      <p style={{ fontSize: 14, lineHeight: 1.8, color: 'var(--text-primary)' }}>{item.content}</p>
-      <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
-        {item.anon_name} · {new Date(item.created_at).toLocaleDateString('zh-CN')}
-      </p>
+    <div className="page">
+      <button style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 24 }} onClick={onBack}>
+        ← 返回「{wordText}」
+      </button>
 
-      {/* 点赞 + 评论按钮 */}
-      <div style={{ display: 'flex', gap: 16, marginTop: 12 }}>
-        <button
-          onClick={toggleLike}
-          style={{
-            fontSize: 12, color: liked ? 'var(--accent)' : 'var(--text-muted)',
-            display: 'flex', alignItems: 'center', gap: 4, transition: 'color 0.2s'
-          }}
-        >
-          <span>{liked ? '♥' : '♡'}</span>
-          {likeCount > 0 && <span>{likeCount}</span>}
-          <span>有共鸣</span>
-        </button>
-        <button
-          onClick={showComments ? () => setShowComments(false) : loadComments}
-          style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}
-        >
-          <span>💬</span>
-          <span>{showComments ? '收起' : '聊聊'}</span>
-        </button>
+      <div className="card" style={{ marginBottom: 20 }}>
+        <p style={{ fontSize: 15, lineHeight: 1.9, color: 'var(--text-primary)', marginBottom: 12 }}>
+          {item.content}
+        </p>
+        <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+          {item.anon_name} · {new Date(item.created_at).toLocaleDateString('zh-CN')}
+        </p>
+        <div style={{ display: 'flex', gap: 16, marginTop: 14 }}>
+          <button
+            onClick={toggleLike}
+            style={{ fontSize: 13, color: liked ? 'var(--accent)' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}
+          >
+            {liked ? '♥' : '♡'} {likeCount > 0 ? likeCount : ''} 有共鸣
+          </button>
+          <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+            💬 {comments.length} 条评论
+          </span>
+        </div>
       </div>
 
       {/* 评论区 */}
-      {showComments && (
-        <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
-          {comments.length === 0 && (
-            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>还没有人聊，来说说你的想法</p>
-          )}
-          {comments.map(c => (
-            <div key={c.id} style={{ marginBottom: 10 }}>
-              <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 3 }}>{c.anon_name}</p>
-              <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7 }}>{c.content}</p>
-            </div>
-          ))}
-          <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
-            <input
-              placeholder="说点什么…"
-              value={draft}
-              onChange={e => setDraft(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && submitComment()}
-              style={{ flex: 1, padding: '6px 10px', fontSize: 13 }}
-            />
-            <button
-              className="btn-ghost"
-              disabled={!draft.trim() || submitting}
-              onClick={submitComment}
-              style={{ fontSize: 12, padding: '6px 12px' }}
-            >
-              发
-            </button>
+      <div>
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>评论</p>
+        {comments.length === 0 && (
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>还没有评论，来说说你的想法</p>
+        )}
+        {comments.map(c => (
+          <div key={c.id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid var(--border)' }}>
+            <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{c.anon_name}</p>
+            <p style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.7 }}>{c.content}</p>
           </div>
+        ))}
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <input
+            placeholder="写评论…"
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && submitComment()}
+            style={{ flex: 1, padding: '8px 12px', fontSize: 14 }}
+          />
+          <button className="btn-ghost" disabled={!draft.trim() || submitting} onClick={submitComment}
+            style={{ padding: '8px 14px' }}>
+            发
+          </button>
         </div>
-      )}
+      </div>
     </div>
+  );
+}
+
+// 解读列表卡片（只显示摘要）
+function InterpretationCard({ item, onClick }) {
+  const liked = wordsApi.isLiked(item.id);
+  return (
+    <button
+      onClick={() => onClick(item)}
+      style={{
+        textAlign: 'left', width: '100%',
+        background: 'var(--surface)', border: '1px solid var(--border)',
+        borderRadius: 'var(--radius)', padding: '14px 16px',
+        marginBottom: 10, transition: 'border-color 0.2s'
+      }}
+      onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent)'}
+      onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
+    >
+      <p style={{
+        fontSize: 14, lineHeight: 1.8, color: 'var(--text-primary)', marginBottom: 8,
+        display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden'
+      }}>
+        {item.content}
+      </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+          {item.anon_name} · {new Date(item.created_at).toLocaleDateString('zh-CN')}
+        </p>
+        <p style={{ fontSize: 11, color: liked ? 'var(--accent)' : 'var(--text-muted)' }}>
+          {liked ? '♥' : '♡'} {item.like_count > 0 ? item.like_count : ''}
+        </p>
+      </div>
+    </button>
   );
 }
 
@@ -163,24 +172,16 @@ function DailyQuestion({ words, onSelect }) {
   const word = words.find(w => w.id === daily.wordId);
   if (!word) return null;
   return (
-    <div style={{
-      background: 'var(--surface)', border: '1px solid var(--border)',
-      borderRadius: 'var(--radius)', padding: '18px 20px', marginBottom: 20
-    }}>
-      <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10, letterSpacing: '0.05em' }}>今日话题</p>
-      <p style={{ fontSize: 15, lineHeight: 1.8, color: 'var(--text-primary)', marginBottom: 14 }}>
-        {daily.question}
-      </p>
-      <button className="btn-ghost" style={{ fontSize: 13 }} onClick={() => onSelect(word)}>
-        看看大家怎么说 →
-      </button>
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '18px 20px', marginBottom: 20 }}>
+      <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>今日话题</p>
+      <p style={{ fontSize: 15, lineHeight: 1.8, color: 'var(--text-primary)', marginBottom: 14 }}>{daily.question}</p>
+      <button className="btn-ghost" style={{ fontSize: 13 }} onClick={() => onSelect(word)}>看看大家怎么说 →</button>
     </div>
   );
 }
 
-function HotPreviews({ words, onSelect }) {  const [previews] = useState(() =>
-    [...PREVIEW_POOL].sort(() => Math.random() - 0.5).slice(0, 3)
-  );
+function HotPreviews({ words, onSelect }) {
+  const [previews] = useState(() => [...PREVIEW_POOL].sort(() => Math.random() - 0.5).slice(0, 3));
   return (
     <div>
       <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>有人说过</p>
@@ -188,23 +189,13 @@ function HotPreviews({ words, onSelect }) {  const [previews] = useState(() =>
         {previews.map((p, i) => {
           const word = words.find(w => w.id === p.wordId);
           return (
-            <button
-              key={i}
-              onClick={() => word && onSelect(word)}
-              style={{
-                textAlign: 'left', background: 'var(--surface)',
-                border: '1px solid var(--border)', borderRadius: 'var(--radius)',
-                padding: '14px 16px', transition: 'border-color 0.2s'
-              }}
+            <button key={i} onClick={() => word && onSelect(word)}
+              style={{ textAlign: 'left', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '14px 16px', transition: 'border-color 0.2s' }}
               onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent)'}
               onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
             >
-              <p style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--text-primary)', marginBottom: 8 }}>
-                "{p.content}"
-              </p>
-              <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                {p.anon_name} · 关于「{word?.text || ''}」
-              </p>
+              <p style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--text-primary)', marginBottom: 8 }}>"{p.content}"</p>
+              <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>{p.anon_name} · 关于「{word?.text || ''}」</p>
             </button>
           );
         })}
@@ -229,28 +220,18 @@ function WordRequest() {
   return (
     <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--border)' }}>
       {!open ? (
-        <button
-          style={{ fontSize: 12, color: 'var(--text-muted)' }}
-          onClick={() => setOpen(true)}
-        >
+        <button style={{ fontSize: 12, color: 'var(--text-muted)' }} onClick={() => setOpen(true)}>
           + 没有你想要的词？申请添加
         </button>
       ) : done ? (
         <p style={{ fontSize: 13, color: 'var(--accent)' }}>已收到你的申请，谢谢。</p>
       ) : (
         <div>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
-            说出你想添加的词，我们会考虑加入。
-          </p>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>说出你想添加的词，我们会考虑加入。</p>
           <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              placeholder="输入词语…"
-              value={word}
-              onChange={e => setWord(e.target.value)}
+            <input placeholder="输入词语…" value={word} onChange={e => setWord(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && submit()}
-              style={{ flex: 1, padding: '6px 10px', fontSize: 13 }}
-              autoFocus
-            />
+              style={{ flex: 1, padding: '6px 10px', fontSize: 13 }} autoFocus />
             <button className="btn-ghost" onClick={submit} disabled={!word.trim()}>提交</button>
             <button className="btn-ghost" onClick={() => setOpen(false)}>取消</button>
           </div>
@@ -263,10 +244,12 @@ function WordRequest() {
 export default function Words() {
   const [words, setWords] = useState([]);
   const [selected, setSelected] = useState(null);
+  const [selectedInterp, setSelectedInterp] = useState(null);
   const [interpretations, setInterpretations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [composing, setComposing] = useState(false);
   const [draft, setDraft] = useState('');
+  const [visibleWords, setVisibleWords] = useState([]);
   const location = useLocation();
 
   useEffect(() => {
@@ -274,19 +257,26 @@ export default function Words() {
       const presetTexts = new Set(preset.map(w => w.text));
       const tagWords = tags
         .filter(t => !t.is_archived && !presetTexts.has(t.text))
-        .map(t => ({ id: 'tag_' + t.id, text: t.text, interpretation_count: 0, fromTag: true }));
+        .map(t => ({ id: 'tag_' + t.id, text: t.text, fromTag: true }));
       setWords([...preset, ...tagWords]);
     });
   }, []);
 
   useEffect(() => {
-    if (location.state?.word && words.length > 0) {
-      selectWord(location.state.word);
-    }
+    if (location.state?.word && words.length > 0) selectWord(location.state.word);
   }, [location.state, words]);
+
+  useEffect(() => {
+    if (words.length > 0) shuffle();
+  }, [words]);
+
+  function shuffle() {
+    setVisibleWords([...words].sort(() => Math.random() - 0.5).slice(0, 15));
+  }
 
   async function selectWord(word) {
     setSelected(word);
+    setSelectedInterp(null);
     setLoading(true);
     const { data } = await wordsApi.getInterpretations(word.id);
     setInterpretations(data);
@@ -301,41 +291,44 @@ export default function Words() {
     setComposing(false);
   }
 
+  // 解读详情页
+  if (selectedInterp) {
+    return (
+      <InterpretationDetail
+        item={selectedInterp}
+        wordId={selected.id}
+        wordText={selected.text}
+        onBack={() => setSelectedInterp(null)}
+      />
+    );
+  }
+
+  // 词条页
   if (selected) {
     return (
       <div className="page">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 32 }}>
-          <button
-            style={{ color: 'var(--text-muted)', fontSize: 13 }}
-            onClick={() => { setSelected(null); setComposing(false); }}
-          >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+          <button style={{ color: 'var(--text-muted)', fontSize: 13 }}
+            onClick={() => { setSelected(null); setComposing(false); }}>
             ← 返回
           </button>
           <h2 style={{ fontSize: 22, fontWeight: 500 }}>「{selected.text}」</h2>
         </div>
-
-        <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 24 }}>
+        <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 20 }}>
           不同的人，对同一个词有不同的理解。
         </p>
 
         {!composing ? (
-          <button className="btn-ghost" style={{ marginBottom: 24 }} onClick={() => setComposing(true)}>
+          <button className="btn-ghost" style={{ marginBottom: 20 }} onClick={() => setComposing(true)}>
             + 留下我的解读
           </button>
         ) : (
-          <div className="card" style={{ marginBottom: 24 }}>
-            <textarea
-              rows={3}
-              placeholder={`对你来说，"${selected.text}"意味着什么？`}
-              value={draft}
-              onChange={e => setDraft(e.target.value)}
-              style={{ marginBottom: 12 }}
-              autoFocus
-            />
+          <div className="card" style={{ marginBottom: 20 }}>
+            <textarea rows={3} placeholder={`对你来说，"${selected.text}"意味着什么？`}
+              value={draft} onChange={e => setDraft(e.target.value)}
+              style={{ marginBottom: 12 }} autoFocus />
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn-primary" disabled={!draft.trim()} onClick={submitInterpretation}>
-                提交
-              </button>
+              <button className="btn-primary" disabled={!draft.trim()} onClick={submitInterpretation}>提交</button>
               <button className="btn-ghost" onClick={() => setComposing(false)}>取消</button>
             </div>
           </div>
@@ -346,26 +339,16 @@ export default function Words() {
           <div className="empty">还没有人解读这个词<br />留下你的理解</div>
         )}
         {interpretations.map(item => (
-          <InterpretationCard key={item.id} item={item} wordId={selected.id} />
+          <InterpretationCard key={item.id} item={item} onClick={setSelectedInterp} />
         ))}
       </div>
     );
   }
 
-  const [visibleWords, setVisibleWords] = useState([]);
-
-  useEffect(() => {
-    if (words.length > 0) shuffle();
-  }, [words]);
-
-  function shuffle() {
-    const picked = [...words].sort(() => Math.random() - 0.5).slice(0, 15);
-    setVisibleWords(picked);
-  }
-
+  // 主页
   return (
     <div className="page">
-      <h2 style={{ fontSize: 20, fontWeight: 500, marginBottom: 8 }}>词语集市</h2>
+      <h2 style={{ fontSize: 20, fontWeight: 500, marginBottom: 8 }}>标签市集</h2>
       <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 24 }}>
         同一个词，在不同人那里是不同的重量。
       </p>
@@ -381,8 +364,6 @@ export default function Words() {
 
       <DailyQuestion words={words} onSelect={selectWord} />
       <HotPreviews words={words} onSelect={selectWord} />
-
-      {/* 申请新词 */}
       <WordRequest />
     </div>
   );
