@@ -6,6 +6,7 @@ function PostDetail({ post, onBack }) {
   const [perspective, setPerspective] = useState(null);
   const [loadingP, setLoadingP] = useState(false);
   const [contributing, setContributing] = useState(false);
+  const [myPerspective, setMyPerspective] = useState('');
   const [pInput, setPInput] = useState('');
   const [resonated, setResonated] = useState(false);
   const [myFeeling, setMyFeeling] = useState('');
@@ -37,6 +38,7 @@ function PostDetail({ post, onBack }) {
   async function submitPerspective() {
     if (!pInput.trim()) return;
     await resonanceApi.addPerspective(post.id, pInput.trim());
+    setMyPerspective(pInput.trim());
     setContributing(false);
     setPInput('');
   }
@@ -110,7 +112,15 @@ function PostDetail({ post, onBack }) {
             <p style={{ fontSize: 14, lineHeight: 1.8, color: 'var(--text-secondary)', marginBottom: 14 }}>
               {perspective}
             </p>
-            {!contributing ? (
+            {myPerspective ? (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>我的视角</p>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7,
+                  paddingLeft: 10, borderLeft: '2px solid var(--accent)' }}>
+                  {myPerspective}
+                </p>
+              </div>
+            ) : !contributing ? (
               <button
                 style={{ fontSize: 12, color: 'var(--text-muted)' }}
                 onClick={() => setContributing(true)}

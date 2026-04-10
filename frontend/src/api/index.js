@@ -96,9 +96,36 @@ export const onboardingApi = {
     const shuffled = [...all].sort(() => Math.random() - 0.5).slice(0, count);
     return Promise.resolve({ data: shuffled.map((question, index) => ({ index, question })) });
   },
-  submit: ({ answers }) => {
+  submit: async ({ answers }) => {
     const texts = answers.map(a => a.answer);
-    const tagTexts = mockExtractTags(texts);
+    let tagTexts;
+    try {
+      const res = await fetch('https://api.deepseek.com/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_DEEPSEEK_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: 'deepseek-chat',
+          messages: [
+            {
+              role: 'system',
+              content: `你是一个中性、不评判的沟通观察者。根据用户的问答内容，提取5-8个描述其沟通特质的标签词。要求：只从以下词库中选择：安静、话多、直接、委婉、犹豫、果断、慢热、主动、被动、理性、感性、专注、发散、守时、随性、计划、灵活、坚持、妥协、倾听、表达、观察、参与、独立、依赖、自信、谨慎、幽默、严肃、热情、冷静、开放、保守、细腻、粗犷、温和、锋利、含蓄、坦率、大胆、稳定、多变、合群、独处、耐心、急躁、包容、挑剔、信任、怀疑、支持、质疑、合作、竞争、分享、保留、引领、跟随、创新、传统、情感、逻辑、直觉、分析、行动、思考、感受、判断、描述、回应。只返回JSON数组格式如["标签1","标签2"]，不要其他内容。`
+            },
+            { role: 'user', content: texts.join('\n') }
+          ],
+          temperature: 0.3,
+          max_tokens: 200
+        })
+      });
+      const data = await res.json();
+      const content = data.choices[0].message.content.trim();
+      tagTexts = JSON.parse(content);
+      if (!Array.isArray(tagTexts) || tagTexts.length === 0) throw new Error('invalid');
+    } catch {
+      tagTexts = mockExtractTags(texts);
+    }
     const tags = tagTexts.map(text => ({
       id: uid(), text, is_pinned: false, is_archived: false,
       created_at: new Date().toISOString()

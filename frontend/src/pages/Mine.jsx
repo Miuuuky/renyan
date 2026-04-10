@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { tagsApi, wordsApi, labApi } from '../api/index.js';
 import { useNavigate } from 'react-router-dom';
-import { storage } from '../api/storage.js';
+import { storage, uid } from '../api/storage.js';
 
 const TAG_COLORS = {
   '职场': '#e8f0f5', '亲密关系': '#f5e8f0', '家庭': '#f5f0e8',
@@ -10,14 +10,35 @@ const TAG_COLORS = {
 
 const TABS = ['我的标签', '练习记录', '解读记录', '点赞记录'];
 
+const MBTI_TYPES = [
+  'INTJ','INTP','ENTJ','ENTP',
+  'INFJ','INFP','ENFJ','ENFP',
+  'ISTJ','ISFJ','ESTJ','ESFJ',
+  'ISTP','ISFP','ESTP','ESFP'
+];
+
 // ---- 我的标签 ----
 function MyTags() {
   const [tags, setTags] = useState([]);
+  const [showMbti, setShowMbti] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     tagsApi.list().then(({ data }) => setTags(data));
   }, []);
+
+  async function addMbti(type) {
+    const exists = tags.find(t => MBTI_TYPES.includes(t.text) && !t.is_archived);
+    let currentTags = storage.get('tags') || [];
+    if (exists) {
+      currentTags = currentTags.map(t => t.id === exists.id ? { ...t, is_archived: true, is_pinned: false } : t);
+    }
+    const newTag = { id: uid(), text: type, is_pinned: false, is_archived: false, created_at: new Date().toISOString() };
+    currentTags.push(newTag);
+    storage.set('tags', currentTags);
+    setTags(currentTags);
+    setShowMbti(false);
+  }
 
   async function togglePin(tag) {
     try {
@@ -52,7 +73,7 @@ function MyTags() {
       <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 20 }}>
         这些词来自你的回答，不定义你，只是此刻的一个切面。点击词语可以看看别人怎么理解它。
       </p>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 32 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
         {active.map(tag => (
           <div key={tag.id} className={`tag ${tag.is_pinned ? 'pinned' : ''}`}>
             {tag.is_pinned && <span style={{ fontSize: 10 }}>📌</span>}
@@ -79,6 +100,37 @@ function MyTags() {
           </div>
         ))}
       </div>
+
+      {/* MBTI 入口 */}
+      {!showMbti ? (
+        <button
+          style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 24 }}
+          onClick={() => setShowMbti(true)}
+        >
+          + 添加 MBTI 标签
+        </button>
+      ) : (
+        <div style={{ marginBottom: 24 }}>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>选择你的 MBTI 类型</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+            {MBTI_TYPES.map(type => (
+              <button
+                key={type}
+                onClick={() => addMbti(type)}
+                style={{
+                  fontSize: 13, padding: '5px 12px', borderRadius: 20,
+                  background: tags.find(t => t.text === type) ? 'var(--accent)' : 'var(--tag-bg)',
+                  color: tags.find(t => t.text === type) ? '#fff' : 'var(--text-secondary)',
+                  border: '1px solid var(--border)'
+                }}
+              >
+                {type}
+              </button>
+            ))}
+          </div>
+          <button className="btn-ghost" style={{ fontSize: 12 }} onClick={() => setShowMbti(false)}>关闭</button>
+        </div>
+      )}
 
       {archived.length > 0 && (
         <div>
