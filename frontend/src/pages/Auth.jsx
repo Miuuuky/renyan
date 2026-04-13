@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../api/supabase.js';
+import { setCurrentUser } from '../api/index.js';
 
 export default function Auth({ onSuccess }) {
   const [email, setEmail] = useState('');
@@ -20,12 +21,17 @@ export default function Auth({ onSuccess }) {
       // 创建用户记录
       if (data.user) {
         const { randomName } = await import('../api/storage.js');
-        await supabase.from('users').insert({ id: data.user.id, anon_name: randomName() });
+        const anonName = randomName();
+        await supabase.from('users').insert({ id: data.user.id, anon_name: anonName });
+        setCurrentUser(data.user.id, anonName);
         onSuccess(data.user);
       }
     } else {
       const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
       if (error) { setError('邮箱或密码错误'); setLoading(false); return; }
+      // 获取用户anon_name
+      const { data: userData } = await supabase.from('users').select('anon_name').eq('id', data.user.id).single();
+      setCurrentUser(data.user.id, userData?.anon_name);
       onSuccess(data.user);
     }
     setLoading(false);
