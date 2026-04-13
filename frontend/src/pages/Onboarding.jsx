@@ -56,7 +56,7 @@ const QUESTION_EXAMPLES = {
   ],
 };
 
-export default function Onboarding() {
+export default function Onboarding({ userId }) {
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
   const [step, setStep] = useState(0);
@@ -87,6 +87,7 @@ export default function Onboarding() {
       const payload = questions.map(q => ({ index: q.index, answer: answers[q.index] }));
       const { data } = await onboardingApi.submit({ answers: payload });
       setTags(data.tags);
+      localStorage.setItem('renyan_onboarded_' + (userId || 'local'), 'true');
       await new Promise(r => setTimeout(r, 2000));
       navigate('/mine');
     } catch {

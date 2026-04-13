@@ -1,13 +1,19 @@
-import { storage, uid, randomName } from './storage';
+import { supabase } from './supabase.js';
 import { PRESET_WORDS, PRESET_INTERPRETATIONS, TAG_SIMILAR_MAP } from './words-data';
 
-function getOrCreateUser() {
-  let user = storage.get('user');
-  if (!user) {
-    user = { id: uid(), anon_name: randomName(), created_at: new Date().toISOString() };
-    storage.set('user', user);
-  }
-  return user;
+let currentUserId = null;
+let currentAnonName = null;
+
+export function setCurrentUser(userId, anonName) {
+  currentUserId = userId;
+  currentAnonName = anonName;
+}
+
+export async function getAnonName() {
+  if (currentAnonName) return currentAnonName;
+  const { data } = await supabase.from('users').select('anon_name').eq('id', currentUserId).single();
+  currentAnonName = data?.anon_name;
+  return currentAnonName;
 }
 
 function mockExtractTags(answers) {
@@ -33,10 +39,9 @@ function mockExtractTags(answers) {
     { keywords: ['包容','接受','不计较'], tag: '包容' },
     { keywords: ['信任','相信','信赖'], tag: '信任' },
     { keywords: ['温和','温柔','平和'], tag: '温和' },
-    { keywords: ['躲','逃','回避','不想面对'], tag: '回避' },
+    { keywords: ['躲','逃','回避'], tag: '回避' },
     { keywords: ['误解','不理解','没人懂'], tag: '渴望被理解' },
     { keywords: ['拒绝','说不','不敢拒绝'], tag: '不善拒绝' },
-    { keywords: ['比喻','乌龟','气球','消防'], tag: '善用比喻' },
     { keywords: ['冷战','沉默','不说话'], tag: '习惯沉默' },
   ];
   const matched = rules.filter(r => r.keywords.some(k => text.includes(k))).map(r => r.tag);
@@ -62,21 +67,6 @@ function findSimilarWordId(tagText) {
   );
   return matched?.wordId || null;
 }
-
-const PRESET_POSTS = [
-  { id: uid(), content: '我说了很多，但感觉对方根本没在听。不是愤怒，只是一种很深的疲惫。', anon_name: '晨雾412', resonance_count: 7, created_at: new Date(Date.now() - 86400000 * 2).toISOString() },
-  { id: uid(), content: '有些话我想了很久，最后还是没说出口。不知道说了会怎样，但没说也很难受。', anon_name: '流云208', resonance_count: 12, created_at: new Date(Date.now() - 86400000).toISOString() },
-  { id: uid(), content: '对方沉默的时候，我不知道该怎么办。我填满了所有的空白，但好像越说越远。', anon_name: '暮光531', resonance_count: 5, created_at: new Date(Date.now() - 3600000 * 5).toISOString() },
-];
-
-export const userApi = {
-  register: () => Promise.resolve({ data: { token: 'local', user: getOrCreateUser() } }),
-  me: () => {
-    const user = storage.get('user');
-    if (user) return Promise.resolve({ data: user });
-    return Promise.reject(new Error('no user'));
-  }
-};
 
 export const onboardingApi = {
   getQuestions: () => {
@@ -126,223 +116,188 @@ export const onboardingApi = {
     } catch {
       tagTexts = mockExtractTags(texts);
     }
-    const tags = tagTexts.map(text => ({
-      id: uid(), text, is_pinned: false, is_archived: false,
-      created_at: new Date().toISOString()
-    }));
-    storage.set('tags', tags);
-    storage.set('onboarded', true);
-    tags.forEach(t => storage.push('river', { ...t, type: 'tag' }));
-    return Promise.resolve({ data: { tags } });
+
+    // 删除旧标签，插入新标签
+    await supabase.from('tags').delete().eq('user_id', currentUserId);
+    const rows = tagTexts.map(text => ({ user_id: currentUserId, text, is_pinned: false, is_archived: false }));
+    const { data: tags } = await supabase.from('tags').insert(rows).select();
+    return { data: { tags } };
   }
 };
 
 export const tagsApi = {
-  list: () => Promise.resolve({ data: storage.get('tags') || [] }),
-  pin: (id, pinned) => {
-    const tags = storage.get('tags') || [];
-    if (pinned && tags.filter(t => t.is_pinned).length >= 3) {
-      return Promise.reject({ response: { data: { error: '最多置顶3个标签' } } });
+  list: async () => {
+    const { data } = await supabase.from('tags').select('*').eq('user_id', currentUserId).order('created_at');
+    return { data: data || [] };
+  },
+  pin: async (id, pinned) => {
+    if (pinned) {
+      const { data } = await supabase.from('tags').select('id').eq('user_id', currentUserId).eq('is_pinned', true);
+      if (data && data.length >= 3) throw { response: { data: { error: '最多置顶3个标签' } } };
     }
-    const updated = tags.map(t => t.id === id ? { ...t, is_pinned: pinned } : t);
-    storage.set('tags', updated);
-    return Promise.resolve({ data: updated.find(t => t.id === id) });
+    const { data } = await supabase.from('tags').update({ is_pinned: pinned }).eq('id', id).select().single();
+    return { data };
   },
-  updateText: (id, text) => {
-    const tags = (storage.get('tags') || []).map(t => t.id === id ? { ...t, text } : t);
-    storage.set('tags', tags);
-    return Promise.resolve({ data: tags.find(t => t.id === id) });
+  updateText: async (id, text) => {
+    const { data } = await supabase.from('tags').update({ text }).eq('id', id).select().single();
+    return { data };
   },
-  archive: (id) => {
-    const tags = (storage.get('tags') || []).map(t =>
-      t.id === id ? { ...t, is_archived: true, is_pinned: false } : t
-    );
-    storage.set('tags', tags);
-    return Promise.resolve({ data: tags.find(t => t.id === id) });
+  archive: async (id) => {
+    const { data } = await supabase.from('tags').update({ is_archived: true, is_pinned: false }).eq('id', id).select().single();
+    return { data };
   },
-  restore: (id) => {
-    const tags = (storage.get('tags') || []).map(t =>
-      t.id === id ? { ...t, is_archived: false } : t
-    );
-    storage.set('tags', tags);
-    return Promise.resolve({ data: tags.find(t => t.id === id) });
-  }
-};
-
-export const experimentsApi = {
-  done: ({ experimentId, content, note }) => {
-    const record = {
-      id: uid(), experiment_id: experimentId,
-      experiment_content: content, note,
-      type: 'experiment', created_at: new Date().toISOString()
-    };
-    storage.push('river', record);
-    return Promise.resolve({ data: record });
+  restore: async (id) => {
+    const { data } = await supabase.from('tags').update({ is_archived: false }).eq('id', id).select().single();
+    return { data };
+  },
+  addMbti: async (type) => {
+    // 归档旧的MBTI标签
+    const mbtiTypes = ['INTJ','INTP','ENTJ','ENTP','INFJ','INFP','ENFJ','ENFP','ISTJ','ISFJ','ESTJ','ESFJ','ISTP','ISFP','ESTP','ESFP'];
+    await supabase.from('tags').update({ is_archived: true, is_pinned: false })
+      .eq('user_id', currentUserId).in('text', mbtiTypes);
+    const { data } = await supabase.from('tags').insert({ user_id: currentUserId, text: type, is_pinned: false, is_archived: false }).select().single();
+    return { data };
   }
 };
 
 export const resonanceApi = {
-  list: () => {
-    const saved = storage.get('posts') || [];
-    return Promise.resolve({ data: [...saved, ...PRESET_POSTS] });
+  list: async () => {
+    const { data } = await supabase.from('resonance_posts').select('*').order('created_at', { ascending: false }).limit(50);
+    return { data: data || [] };
   },
-  post: (content) => {
-    const user = getOrCreateUser();
-    const post = { id: uid(), content, anon_name: user.anon_name, resonance_count: 0, created_at: new Date().toISOString() };
-    storage.push('posts', post);
-    return Promise.resolve({ data: post });
+  post: async (content) => {
+    const anon_name = await getAnonName();
+    const { data } = await supabase.from('resonance_posts').insert({ user_id: currentUserId, content, anon_name, resonance_count: 0 }).select().single();
+    return { data };
   },
-  resonate: (id, feeling) => {
-    const posts = storage.get('posts') || [];
-    const updated = posts.map(p => p.id === id ? { ...p, resonance_count: (p.resonance_count || 0) + 1 } : p);
-    storage.set('posts', updated);
-    return Promise.resolve({ data: { resonance_count: updated.find(p => p.id === id)?.resonance_count || 1 } });
+  resonate: async (postId, feeling) => {
+    const { data: existing } = await supabase.from('resonances').select('id').eq('post_id', postId).eq('user_id', currentUserId).single();
+    if (!existing) {
+      await supabase.from('resonances').insert({ post_id: postId, user_id: currentUserId, feeling });
+      await supabase.rpc('increment_resonance', { post_id: postId });
+    }
+    const { data: post } = await supabase.from('resonance_posts').select('resonance_count').eq('id', postId).single();
+    return { data: { resonance_count: post?.resonance_count || 0 } };
   },
-  getPerspective: (id) => {
-    const saved = storage.get('perspectives_' + id);
-    if (saved?.length) return Promise.resolve({ data: { content: saved[Math.floor(Math.random() * saved.length)].content, is_ai: false } });
-    return Promise.resolve({ data: { content: mockPerspective(), is_ai: true } });
+  hasResonated: async (postId) => {
+    const { data } = await supabase.from('resonances').select('id').eq('post_id', postId).eq('user_id', currentUserId).single();
+    return !!data;
   },
-  addPerspective: (id, content) => {
-    storage.push('perspectives_' + id, { id: uid(), content });
-    return Promise.resolve({ data: { ok: true } });
+  getPerspective: async (postId) => {
+    const { data } = await supabase.from('perspectives').select('content').eq('post_id', postId).order('created_at').limit(1).single();
+    if (data) return { data: { content: data.content, is_ai: false } };
+    return { data: { content: mockPerspective(), is_ai: true } };
+  },
+  addPerspective: async (postId, content) => {
+    await supabase.from('perspectives').insert({ post_id: postId, user_id: currentUserId, content });
+    return { data: { ok: true } };
   }
 };
 
 export const wordsApi = {
   list: () => Promise.resolve({ data: PRESET_WORDS }),
-  getInterpretations: (id) => {
-    const saved = storage.get('interp_' + id) || [];
-    const preset = PRESET_INTERPRETATIONS[id] || [];
-    if (id.startsWith('tag_') && preset.length === 0) {
-      const tags = storage.get('tags') || [];
-      const tag = tags.find(t => t.id === id.replace('tag_', ''));
-      if (tag) {
-        const similarId = findSimilarWordId(tag.text);
-        const borrowed = (similarId ? (PRESET_INTERPRETATIONS[similarId] || []) : [])
-          .slice(0, 3).map(item => ({ ...item, id: uid() }));
-        return Promise.resolve({ data: [...saved, ...borrowed] });
-      }
+  getInterpretations: async (wordId) => {
+    if (!wordId.startsWith('tag_')) {
+      const { data: saved } = await supabase.from('word_interpretations').select('*').eq('word_id', wordId).order('created_at', { ascending: false });
+      const preset = PRESET_INTERPRETATIONS[wordId] || [];
+      return { data: [...(saved || []), ...preset] };
     }
-    return Promise.resolve({ data: [...saved, ...preset] });
+    // 标签词条匹配相似预置解读
+    const { data: tags } = await supabase.from('tags').select('text').eq('user_id', currentUserId).eq('id', wordId.replace('tag_', '')).single();
+    const { data: saved } = await supabase.from('word_interpretations').select('*').eq('word_id', wordId).order('created_at', { ascending: false });
+    if (tags) {
+      const similarId = findSimilarWordId(tags.text);
+      const borrowed = (similarId ? (PRESET_INTERPRETATIONS[similarId] || []) : []).slice(0, 3);
+      return { data: [...(saved || []), ...borrowed] };
+    }
+    return { data: saved || [] };
   },
-  addInterpretation: (id, content) => {
-    const user = getOrCreateUser();
-    const item = { id: uid(), anon_name: user.anon_name, content, created_at: new Date().toISOString(), like_count: 0 };
-    storage.push('interp_' + id, item);
-    return Promise.resolve({ data: item });
+  addInterpretation: async (wordId, content) => {
+    const anon_name = await getAnonName();
+    const { data } = await supabase.from('word_interpretations').insert({ word_id: wordId, user_id: currentUserId, anon_name, content, like_count: 0 }).select().single();
+    return { data };
   },
-  likeInterpretation: (wordId, interpId) => {
-    const liked = storage.get('liked_interp') || {};
-    if (liked[interpId]) return Promise.resolve({ data: { liked: false, cancelled: true } });
-    liked[interpId] = true;
-    storage.set('liked_interp', liked);
-    return Promise.resolve({ data: { liked: true } });
+  likeInterpretation: async (wordId, interpId) => {
+    const { data: existing } = await supabase.from('word_likes').select('id').eq('interpretation_id', interpId).eq('user_id', currentUserId).single();
+    if (existing) {
+      await supabase.from('word_likes').delete().eq('id', existing.id);
+      await supabase.from('word_interpretations').update({ like_count: supabase.rpc('decrement', { x: 1 }) }).eq('id', interpId);
+      return { data: { liked: false, cancelled: true } };
+    }
+    await supabase.from('word_likes').insert({ interpretation_id: interpId, user_id: currentUserId });
+    await supabase.from('word_interpretations').update({ like_count: supabase.rpc('increment', { x: 1 }) }).eq('id', interpId);
+    return { data: { liked: true } };
   },
-  isLiked: (interpId) => {
-    const liked = storage.get('liked_interp') || {};
-    return !!liked[interpId];
+  isLiked: async (interpId) => {
+    const { data } = await supabase.from('word_likes').select('id').eq('interpretation_id', interpId).eq('user_id', currentUserId).single();
+    return !!data;
   },
-  addComment: (wordId, interpId, content) => {
-    const user = getOrCreateUser();
-    const comment = { id: uid(), anon_name: user.anon_name, content, created_at: new Date().toISOString() };
-    storage.push('comments_' + interpId, comment);
-    return Promise.resolve({ data: comment });
+  addComment: async (wordId, interpId, content) => {
+    const anon_name = await getAnonName();
+    const { data } = await supabase.from('word_comments').insert({ interpretation_id: interpId, user_id: currentUserId, anon_name, content }).select().single();
+    return { data };
   },
-  getComments: (interpId) => Promise.resolve({ data: storage.get('comments_' + interpId) || [] })
-};
-
-export const riverApi = {
-  list: () => Promise.resolve({ data: storage.get('river') || [] })
+  getComments: async (interpId) => {
+    const { data } = await supabase.from('word_comments').select('*').eq('interpretation_id', interpId).order('created_at');
+    return { data: data || [] };
+  }
 };
 
 export const labApi = {
-  // 获取场景库（预设 + 用户贡献）
-  getScenes: () => {
-    const userScenes = storage.get('user_scenes') || [];
-    return Promise.resolve({ data: userScenes });
+  getScenes: () => Promise.resolve({ data: [] }),
+  contributeScene: async ({ category, background, prompt }) => {
+    const anon_name = await getAnonName();
+    return { data: { id: 'u_' + Date.now(), category, background, prompt, anon_name } };
   },
-  // 用户贡献场景
-  contributeScene: ({ category, background, prompt }) => {
-    const user = getOrCreateUser();
-    const scene = {
-      id: 'u_' + uid(), category, background, prompt,
-      anon_name: user.anon_name, created_at: new Date().toISOString()
-    };
-    storage.push('user_scenes', scene);
-    return Promise.resolve({ data: scene });
+  submitResponse: async ({ sceneId, sceneBackground, response, isPublic, category }) => {
+    const anon_name = await getAnonName();
+    const { data } = await supabase.from('lab_records').insert({
+      user_id: currentUserId, scene_id: sceneId, scene_background: sceneBackground,
+      category, response, is_public: isPublic, like_count: 0, anon_name
+    }).select().single();
+    return { data };
   },
-  // 提交表达（仅自己 or 发布广场）
-  submitResponse: ({ sceneId, sceneBackground, response, isPublic }) => {
-    const user = getOrCreateUser();
-    const record = {
-      id: uid(), sceneId, sceneBackground, response,
-      anon_name: user.anon_name, isPublic,
-      like_count: 0, created_at: new Date().toISOString()
-    };
-    // 存训练记录
-    storage.push('lab_records', record);
-    // 发布广场
-    if (isPublic) storage.push('lab_plaza', record);
-    return Promise.resolve({ data: record });
+  getPlaza: async (sort = 'time') => {
+    let query = supabase.from('lab_records').select('*').eq('is_public', true);
+    if (sort === 'likes') query = query.order('like_count', { ascending: false });
+    else query = query.order('created_at', { ascending: false });
+    const { data } = await query.limit(50);
+    return { data: data || [] };
   },
-  // 广场列表
-  getPlaza: (sort = 'time') => {
-    const plaza = storage.get('lab_plaza') || [];
-    const sorted = [...plaza].sort((a, b) => {
-      if (sort === 'likes') return (b.like_count || 0) - (a.like_count || 0);
-      if (sort === 'comments') {
-        const ac = (storage.get('lab_comments_' + a.id) || []).length;
-        const bc = (storage.get('lab_comments_' + b.id) || []).length;
-        return bc - ac;
-      }
-      return new Date(b.created_at) - new Date(a.created_at);
-    });
-    return Promise.resolve({ data: sorted });
-  },
-  // 广场点赞
-  likeResponse: (id) => {
-    const liked = storage.get('liked_lab') || {};
-    if (liked[id]) {
-      liked[id] = false;
-      storage.set('liked_lab', liked);
-      const plaza = (storage.get('lab_plaza') || []).map(p =>
-        p.id === id ? { ...p, like_count: Math.max(0, (p.like_count || 0) - 1) } : p
-      );
-      storage.set('lab_plaza', plaza);
-      return Promise.resolve({ data: { liked: false } });
+  likeResponse: async (id) => {
+    const { data: existing } = await supabase.from('lab_likes').select('id').eq('record_id', id).eq('user_id', currentUserId).single();
+    if (existing) {
+      await supabase.from('lab_likes').delete().eq('id', existing.id);
+      return { data: { liked: false } };
     }
-    liked[id] = true;
-    storage.set('liked_lab', liked);
-    const plaza = (storage.get('lab_plaza') || []).map(p =>
-      p.id === id ? { ...p, like_count: (p.like_count || 0) + 1 } : p
-    );
-    storage.set('lab_plaza', plaza);
-    return Promise.resolve({ data: { liked: true } });
+    await supabase.from('lab_likes').insert({ record_id: id, user_id: currentUserId });
+    return { data: { liked: true } };
   },
-  isLiked: (id) => !!(storage.get('liked_lab') || {})[id],
-  // 广场评论
-  getComments: (id) => Promise.resolve({ data: storage.get('lab_comments_' + id) || [] }),
-  addComment: (id, content) => {
-    const user = getOrCreateUser();
-    const comment = { id: uid(), anon_name: user.anon_name, content, created_at: new Date().toISOString() };
-    storage.push('lab_comments_' + id, comment);
-    return Promise.resolve({ data: comment });
+  isLiked: async (id) => {
+    const { data } = await supabase.from('lab_likes').select('id').eq('record_id', id).eq('user_id', currentUserId).single();
+    return !!data;
   },
-  // 训练记录
-  getRecords: () => Promise.resolve({ data: storage.get('lab_records') || [] }),
-  deleteRecord: (id) => {
-    const records = (storage.get('lab_records') || []).filter(r => r.id !== id);
-    storage.set('lab_records', records);
-    return Promise.resolve({ data: { ok: true } });
+  getComments: async (id) => {
+    const { data } = await supabase.from('lab_comments').select('*').eq('record_id', id).order('created_at');
+    return { data: data || [] };
+  },
+  addComment: async (id, content) => {
+    const anon_name = await getAnonName();
+    const { data } = await supabase.from('lab_comments').insert({ record_id: id, user_id: currentUserId, anon_name, content }).select().single();
+    return { data };
+  },
+  getRecords: async () => {
+    const { data } = await supabase.from('lab_records').select('*').eq('user_id', currentUserId).order('created_at', { ascending: false });
+    return { data: data || [] };
+  },
+  deleteRecord: async (id) => {
+    await supabase.from('lab_records').delete().eq('id', id);
+    return { data: { ok: true } };
   }
 };
 
 export const wordRequestApi = {
-  submit: (word) => {
-    const user = getOrCreateUser();
-    const item = { id: uid(), word: word.trim(), anon_name: user.anon_name, created_at: new Date().toISOString() };
-    storage.push('word_requests', item);
-    return Promise.resolve({ data: item });
+  submit: async (word) => {
+    return { data: { ok: true, word } };
   }
 };

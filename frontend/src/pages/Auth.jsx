@@ -1,39 +1,32 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { supabase } from '../api/supabase.js';
-import { randomName } from '../api/storage.js';
 
 export default function Auth({ onSuccess }) {
   const [email, setEmail] = useState('');
-  const [step, setStep] = useState('email');
+  const [password, setPassword] = useState('');
+  const [mode, setMode] = useState('login'); // login | register
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        const userId = session.user.id;
-        const { data: existing } = await supabase.from('users').select('id').eq('id', userId).single();
-        if (!existing) {
-          await supabase.from('users').insert({ id: userId, anon_name: randomName() });
-        }
-        onSuccess(session.user);
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, []);
-
-  async function sendMagicLink() {
-    if (!email.trim()) return;
+  async function handleSubmit() {
+    if (!email.trim() || !password.trim()) return;
+    if (password.length < 6) { setError('密码至少6位'); return; }
     setLoading(true);
     setError('');
-    const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      options: { shouldCreateUser: true }
-    });
-    if (error) {
-      setError('发送失败，请检查邮箱格式');
+
+    if (mode === 'register') {
+      const { data, error } = await supabase.auth.signUp({ email: email.trim(), password });
+      if (error) { setError(error.message === 'User already registered' ? '该邮箱已注册，请直接登录' : '注册失败，请重试'); setLoading(false); return; }
+      // 创建用户记录
+      if (data.user) {
+        const { randomName } = await import('../api/storage.js');
+        await supabase.from('users').insert({ id: data.user.id, anon_name: randomName() });
+        onSuccess(data.user);
+      }
     } else {
-      setStep('sent');
+      const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (error) { setError('邮箱或密码错误'); setLoading(false); return; }
+      onSuccess(data.user);
     }
     setLoading(false);
   }
@@ -48,45 +41,57 @@ export default function Auth({ onSuccess }) {
         让人的复杂性，得以被看见
       </p>
 
-      {step === 'email' ? (
-        <div style={{ width: '100%', maxWidth: 320 }}>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>邮箱登录</p>
-          <input
-            type="email"
-            placeholder="输入你的邮箱"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            style={{ marginBottom: 16 }}
-            onKeyDown={e => e.key === 'Enter' && sendMagicLink()}
-            autoFocus
-          />
-          {error && <p style={{ fontSize: 12, color: '#e57373', marginBottom: 12 }}>{error}</p>}
-          <button
-            className="btn-primary"
-            style={{ width: '100%' }}
-            disabled={!email.includes('@') || loading}
-            onClick={sendMagicLink}
-          >
-            {loading ? '发送中…' : '发送登录链接'}
-          </button>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 16, textAlign: 'center', lineHeight: 1.8 }}>
-            我们会发一封邮件到你的邮箱<br />点击邮件里的链接即可登录，无需密码
-          </p>
+      <div style={{ width: '100%', maxWidth: 320 }}>
+        {/* 切换登录/注册 */}
+        <div style={{ display: 'flex', marginBottom: 24, borderBottom: '1px solid var(--border)' }}>
+          {[['login', '登录'], ['register', '注册']].map(([val, label]) => (
+            <button key={val} onClick={() => { setMode(val); setError(''); }}
+              style={{
+                flex: 1, padding: '8px', fontSize: 14,
+                color: mode === val ? 'var(--accent)' : 'var(--text-muted)',
+                borderBottom: mode === val ? '2px solid var(--accent)' : '2px solid transparent',
+                marginBottom: -1
+              }}>
+              {label}
+            </button>
+          ))}
         </div>
-      ) : (
-        <div style={{ width: '100%', maxWidth: 320, textAlign: 'center' }}>
-          <p style={{ fontSize: 32, marginBottom: 20 }}>📬</p>
-          <p style={{ fontSize: 15, color: 'var(--text-primary)', marginBottom: 8 }}>邮件已发送</p>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.8, marginBottom: 24 }}>
-            请查收 <strong>{email}</strong> 的邮件<br />
-            点击邮件中的链接完成登录
-          </p>
-          <button className="btn-ghost" style={{ fontSize: 13 }}
-            onClick={() => { setStep('email'); setError(''); }}>
-            换一个邮箱
-          </button>
-        </div>
-      )}
+
+        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 6 }}>邮箱</p>
+        <input
+          type="email"
+          placeholder="输入邮箱"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          style={{ marginBottom: 12 }}
+          autoFocus
+        />
+
+        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 6 }}>密码</p>
+        <input
+          type="password"
+          placeholder={mode === 'register' ? '设置密码（至少6位）' : '输入密码'}
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          style={{ marginBottom: 16 }}
+          onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+        />
+
+        {error && <p style={{ fontSize: 12, color: '#e57373', marginBottom: 12 }}>{error}</p>}
+
+        <button
+          className="btn-primary"
+          style={{ width: '100%' }}
+          disabled={!email.includes('@') || password.length < 6 || loading}
+          onClick={handleSubmit}
+        >
+          {loading ? '处理中…' : mode === 'login' ? '登录' : '注册'}
+        </button>
+
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 16, textAlign: 'center' }}>
+          登录后系统会为你分配一个匿名名称
+        </p>
+      </div>
     </div>
   );
 }

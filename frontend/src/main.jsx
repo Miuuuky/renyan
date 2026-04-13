@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import './index.css';
 import { supabase } from './api/supabase.js';
+import { setCurrentUser } from './api/index.js';
 import BottomNav from './components/BottomNav';
 import Auth from './pages/Auth';
 import Onboarding from './pages/Onboarding';
@@ -16,14 +17,31 @@ function App() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    // 检查已有登录状态
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // 先处理URL里的token（邮件链接跳转）
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        const { data: userData } = await supabase.from('users').select('anon_name').eq('id', session.user.id).single();
+        setCurrentUser(session.user.id, userData?.anon_name);
+      }
       setUser(session?.user || null);
       setReady(true);
     });
-    // 监听登录状态变化
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        const { data: userData } = await supabase.from('users').select('anon_name').eq('id', session.user.id).single();
+        setCurrentUser(session.user.id, userData?.anon_name);
+        // 新用户自动创建
+        if (event === 'SIGNED_IN') {
+          const { data: existing } = await supabase.from('users').select('id').eq('id', session.user.id).single();
+          if (!existing) {
+            const { randomName } = await import('./api/storage.js');
+            await supabase.from('users').insert({ id: session.user.id, anon_name: randomName() });
+          }
+        }
+      }
       setUser(session?.user || null);
+      if (!ready) setReady(true);
     });
     return () => subscription.unsubscribe();
   }, []);
