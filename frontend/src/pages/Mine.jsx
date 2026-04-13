@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { tagsApi, wordsApi, labApi } from '../api/index.js';
+import { tagsApi, labApi, setCurrentUser, getAnonName, tagRemoveApi } from '../api/index.js';
 import { useNavigate } from 'react-router-dom';
 import { storage, uid } from '../api/storage.js';
+import { supabase } from '../api/supabase.js';
 
 const TAG_COLORS = {
   '职场': '#e8f0f5', '亲密关系': '#f5e8f0', '家庭': '#f5f0e8',
@@ -21,11 +22,27 @@ const MBTI_TYPES = [
 function MyTags() {
   const [tags, setTags] = useState([]);
   const [showMbti, setShowMbti] = useState(false);
+  const [requesting, setRequesting] = useState(null);
+  const [notifications, setNotifications] = useState([]);
   const navigate = useNavigate();
 
   useEffect(() => {
     tagsApi.list().then(({ data }) => setTags(data));
+    tagRemoveApi.getNotifications().then(({ data }) => setNotifications(data));
   }, []);
+
+  async function requestRemove(tag) {
+    setRequesting(tag.id);
+    const { data } = await tagRemoveApi.request(tag.id, tag.text);
+    if (data?.error) { alert(data.error); }
+    else { alert(`已提交申请，等待其他用户投票。`); }
+    setRequesting(null);
+  }
+
+  async function vote(notification, voteValue) {
+    await tagRemoveApi.vote(notification.request_id, notification.id, voteValue);
+    setNotifications(prev => prev.filter(n => n.id !== notification.id));
+  }
 
   async function addMbti(type) {
     const exists = tags.find(t => MBTI_TYPES.includes(t.text) && !t.is_archived);
@@ -96,10 +113,39 @@ function MyTags() {
               >
                 ·归档
               </button>
+              <button
+                style={{ fontSize: 11, color: 'var(--text-muted)', padding: '0 2px' }}
+                onClick={() => requestRemove(tag)}
+                disabled={requesting === tag.id}
+              >
+                {requesting === tag.id ? '·申请中…' : '·申请撕掉'}
+              </button>
             </span>
           </div>
         ))}
       </div>
+
+      {/* 投票通知 */}
+      {notifications.length > 0 && (
+        <div style={{ marginBottom: 24, padding: '14px 16px', background: 'var(--tag-bg)', borderRadius: 'var(--radius)' }}>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>待你投票 · {notifications.length} 条</p>
+          {notifications.map(n => {
+            const req = n.tag_remove_requests;
+            return (
+              <div key={n.id} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid var(--border)' }}>
+                <p style={{ fontSize: 13, color: 'var(--text-primary)', marginBottom: 6 }}>
+                  <span style={{ color: 'var(--accent)' }}>{req?.users?.anon_name || '某用户'}</span>
+                  {' '}申请撕掉标签「{req?.tag_text}」，你认为这个标签准确吗？
+                </p>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn-ghost" style={{ fontSize: 12 }} onClick={() => vote(n, 'agree')}>不准确，同意撕掉</button>
+                  <button className="btn-ghost" style={{ fontSize: 12 }} onClick={() => vote(n, 'disagree')}>准确，不同意</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* MBTI 入口 */}
       {!showMbti ? (
@@ -270,16 +316,55 @@ function LikeHistory() {
 }
 
 // ---- 主页面 ----
-export default function Mine() {
+export default function Mine({ userId }) {
   const [tab, setTab] = useState(0);
-  const user = storage.get('user');
+  const [anonName, setAnonName] = useState('');
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+  const [savingName, setSavingName] = useState(false);
+
+  useEffect(() => {
+    getAnonName().then(name => setAnonName(name || ''));
+  }, []);
+
+  async function saveName() {
+    if (!nameInput.trim()) return;
+    setSavingName(true);
+    await supabase.from('users').update({ anon_name: nameInput.trim() }).eq('id', userId);
+    setCurrentUser(userId, nameInput.trim());
+    setAnonName(nameInput.trim());
+    setEditingName(false);
+    setSavingName(false);
+  }
 
   return (
     <div className="page">
       <div style={{ marginBottom: 28 }}>
         <h2 style={{ fontSize: 20, fontWeight: 500, marginBottom: 4 }}>我的</h2>
-        {user && (
-          <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{user.anon_name}</p>
+        {editingName ? (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
+            <input
+              value={nameInput}
+              onChange={e => setNameInput(e.target.value)}
+              style={{ width: 140, padding: '4px 8px', fontSize: 13 }}
+              autoFocus
+              onKeyDown={e => e.key === 'Enter' && saveName()}
+            />
+            <button className="btn-ghost" style={{ fontSize: 12 }} onClick={saveName} disabled={savingName}>
+              {savingName ? '保存中…' : '保存'}
+            </button>
+            <button style={{ fontSize: 12, color: 'var(--text-muted)' }} onClick={() => setEditingName(false)}>取消</button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>{anonName}</p>
+            <button
+              style={{ fontSize: 11, color: 'var(--text-muted)' }}
+              onClick={() => { setNameInput(anonName); setEditingName(true); }}
+            >
+              ·改名字
+            </button>
+          </div>
         )}
       </div>
 

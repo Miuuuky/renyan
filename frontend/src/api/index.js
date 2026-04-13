@@ -18,6 +18,7 @@ export async function getAnonName() {
 
 function mockExtractTags(answers) {
   const text = answers.join(' ');
+  const totalLength = answers.reduce((sum, a) => sum + a.length, 0);
   const rules = [
     { keywords: ['安静','不说话','内敛'], tag: '安静' },
     { keywords: ['话多','停不下来','爱说'], tag: '话多' },
@@ -45,8 +46,10 @@ function mockExtractTags(answers) {
     { keywords: ['冷战','沉默','不说话'], tag: '习惯沉默' },
   ];
   const matched = rules.filter(r => r.keywords.some(k => text.includes(k))).map(r => r.tag);
+  // 回答总字数少于30字视为敷衍，只给2个标签
+  if (totalLength < 30) return matched.slice(0, 2).length > 0 ? matched.slice(0, 2) : ['感受', '表达'];
   const fallback = ['感受', '表达', '倾听', '独立', '温和'];
-  return [...new Set([...matched, ...fallback])].slice(0, Math.floor(Math.random() * 4) + 5);
+  return [...new Set([...matched, ...fallback])].slice(0, Math.floor(Math.random() * 4) + 3);
 }
 
 function mockPerspective() {
@@ -101,7 +104,10 @@ export const onboardingApi = {
           messages: [
             {
               role: 'system',
-              content: `你是一个中性、不评判的沟通观察者。根据用户的问答内容，提取5-8个描述其沟通特质的标签词。要求：只从以下词库中选择：安静、话多、直接、委婉、犹豫、果断、慢热、主动、被动、理性、感性、专注、发散、守时、随性、计划、灵活、坚持、妥协、倾听、表达、观察、参与、独立、依赖、自信、谨慎、幽默、严肃、热情、冷静、开放、保守、细腻、粗犷、温和、锋利、含蓄、坦率、大胆、稳定、多变、合群、独处、耐心、急躁、包容、挑剔、信任、怀疑、支持、质疑、合作、竞争、分享、保留、引领、跟随、创新、传统、情感、逻辑、直觉、分析、行动、思考、感受、判断、描述、回应。只返回JSON数组格式如["标签1","标签2"]，不要其他内容。`
+              content: `你是一个中性、不评判的沟通观察者。根据用户的问答内容，提取描述其沟通特质的标签词。要求：
+1. 只从以下词库中选择：安静、话多、直接、委婉、犹豫、果断、慢热、主动、被动、理性、感性、专注、发散、守时、随性、计划、灵活、坚持、妥协、倾听、表达、观察、参与、独立、依赖、自信、谨慎、幽默、严肃、热情、冷静、开放、保守、细腻、粗犷、温和、锋利、含蓄、坦率、大胆、稳定、多变、合群、独处、耐心、急躁、包容、挑剔、信任、怀疑、支持、质疑、合作、竞争、分享、保留、引领、跟随、创新、传统、情感、逻辑、直觉、分析、行动、思考、感受、判断、描述、回应
+2. 根据回答质量决定标签数量：回答敷衍（如只有几个字、无实质内容）给2-3个；回答一般给3-5个；回答详细真实给5-8个
+3. 只返回JSON数组格式如["标签1","标签2"]，不要其他内容。`
             },
             { role: 'user', content: texts.join('\n') }
           ],
@@ -299,5 +305,77 @@ export const labApi = {
 export const wordRequestApi = {
   submit: async (word) => {
     return { data: { ok: true, word } };
+  }
+};
+
+export const tagRemoveApi = {
+  // 申请撑掉标签
+  request: async (tagId, tagText) => {
+    // 检查是否已有待处理的申请
+    const { data: existing } = await supabase.from('tag_remove_requests')
+      .select('id').eq('tag_id', tagId).eq('status', 'pending').single();
+    if (existing) return { data: { error: '已有待处理的申请' } };
+
+    // 创建申请
+    const { data: req } = await supabase.from('tag_remove_requests')
+      .insert({ tag_id: tagId, requester_id: currentUserId, tag_text: tagText })
+      .select().single();
+
+    // 随机取3个其他用户发送投票通知
+    const { data: voters } = await supabase.from('users')
+      .select('id').neq('id', currentUserId).limit(3);
+    if (voters?.length) {
+      const notifications = voters.map(v => ({ request_id: req.id, voter_id: v.id }));
+      await supabase.from('tag_remove_notifications').insert(notifications);
+    }
+    return { data: req };
+  },
+
+  // 获取我的待投票通知
+  getNotifications: async () => {
+    const { data } = await supabase.from('tag_remove_notifications')
+      .select('*, tag_remove_requests(tag_text, requester_id, status, users(anon_name))')
+      .eq('voter_id', currentUserId).eq('is_read', false)
+      .order('created_at', { ascending: false });
+    return { data: data || [] };
+  },
+
+  // 投票
+  vote: async (requestId, notificationId, vote) => {
+    // 记录投票
+    await supabase.from('tag_remove_votes')
+      .insert({ request_id: requestId, voter_id: currentUserId, vote });
+
+    // 标记通知已读
+    await supabase.from('tag_remove_notifications')
+      .update({ is_read: true }).eq('id', notificationId);
+
+    // 检查投票结果
+    const { data: votes } = await supabase.from('tag_remove_votes')
+      .select('vote').eq('request_id', requestId);
+    const agrees = votes?.filter(v => v.vote === 'agree').length || 0;
+    const total = votes?.length || 0;
+
+    // 2/3同意则自动归档标签
+    if (total >= 2 && agrees >= 2) {
+      const { data: req } = await supabase.from('tag_remove_requests')
+        .select('tag_id').eq('id', requestId).single();
+      if (req?.tag_id) {
+        await supabase.from('tags').update({ is_archived: true, is_pinned: false }).eq('id', req.tag_id);
+      }
+      await supabase.from('tag_remove_requests').update({ status: 'approved' }).eq('id', requestId);
+    } else if (total >= 3 && agrees < 2) {
+      await supabase.from('tag_remove_requests').update({ status: 'rejected' }).eq('id', requestId);
+    }
+    return { data: { ok: true } };
+  },
+
+  // 获取我的申请状态
+  getMyRequests: async () => {
+    const { data } = await supabase.from('tag_remove_requests')
+      .select('*, tag_remove_votes(vote)')
+      .eq('requester_id', currentUserId)
+      .order('created_at', { ascending: false });
+    return { data: data || [] };
   }
 };
