@@ -262,22 +262,26 @@ function PracticeHistory() {
 
 // ---- 解读记录 ----
 function InterpretationHistory() {
-  const records = [];
-  // 从 localStorage 里找所有 interp_ 开头的用户自己提交的解读
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key?.startsWith('renyan_interp_')) {
-      try {
-        const items = JSON.parse(localStorage.getItem(key)) || [];
-        const wordId = key.replace('renyan_interp_', '');
-        items.forEach(item => records.push({ ...item, wordId }));
-      } catch {}
-    }
-  }
-  records.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
 
+  useEffect(() => {
+    supabase.auth.getUser().then(async ({ data: authData }) => {
+      const userId = authData.user?.id;
+      if (!userId) { setLoading(false); return; }
+      const { data } = await supabase
+        .from('word_interpretations')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+      setRecords(data || []);
+      setLoading(false);
+    });
+  }, []);
+
+  if (loading) return <div className="loading">加载中…</div>;
   if (records.length === 0) return (
-    <div className="empty">还没有解读记录<br />去词语集市留下你的理解</div>
+    <div className="empty">还没有解读记录<br />去标签市集留下你的理解</div>
   );
 
   return (
@@ -296,21 +300,49 @@ function InterpretationHistory() {
 
 // ---- 点赞记录 ----
 function LikeHistory() {
-  const liked = storage.get('liked_interp') || {};
-  const likedIds = Object.keys(liked).filter(k => liked[k]);
+  const [likes, setLikes] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  if (likedIds.length === 0) return (
-    <div className="empty">还没有点赞记录<br />在词语集市里点击"有共鸣"</div>
+  useEffect(() => {
+    supabase.auth.getUser().then(async ({ data }) => {
+      const userId = data.user?.id;
+      if (!userId) { setLoading(false); return; }
+      const { data: wordLikes } = await supabase
+        .from('word_likes')
+        .select('*, word_interpretations(content, word_id, anon_name)')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+      const { data: labLikes } = await supabase
+        .from('lab_likes')
+        .select('*, lab_records(response, category, scene_background)')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+      const all = [
+        ...(wordLikes || []).map(l => ({ ...l, type: 'word' })),
+        ...(labLikes || []).map(l => ({ ...l, type: 'lab' }))
+      ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      setLikes(all);
+      setLoading(false);
+    });
+  }, []);
+
+  if (loading) return <div className="loading">加载中…</div>;
+  if (likes.length === 0) return (
+    <div className="empty">还没有点赞记录<br />在标签市集或实验室里点击“有共鸣”</div>
   );
 
   return (
-    <div>
-      <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>
-        共 {likedIds.length} 条有共鸣的解读
-      </p>
-      <p style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-        （点赞内容需要接入后端后才能完整展示）
-      </p>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {likes.map(l => (
+        <div key={l.id} className="card">
+          <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>
+            {l.type === 'word' ? '标签市集解读' : '实验室广场'} · {new Date(l.created_at).toLocaleDateString('zh-CN')}
+          </p>
+          <p style={{ fontSize: 14, lineHeight: 1.8, color: 'var(--text-primary)' }}>
+            {l.type === 'word' ? l.word_interpretations?.content : l.lab_records?.response}
+          </p>
+        </div>
+      ))}
     </div>
   );
 }
